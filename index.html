@@ -499,9 +499,6 @@ async function loadStoreFromSupabase(){
 
 );
 
-  }
-
-
   return store;
 
 }
@@ -566,11 +563,11 @@ const supabaseStore = await loadStoreFromSupabase();
 
 if(supabaseStore){
 
-  STORES[currentStoreId] = {
-    [currentStoreId]: supabaseStore
-  };
+  STORES[currentStoreId] = supabaseStore;
 
 }
+
+updateStoreSelect();
 
 loadMap();
     }
