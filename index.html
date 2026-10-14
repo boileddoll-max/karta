@@ -757,74 +757,95 @@ loadMap();
     }
 
     function renderMarkers(highlightId = null) {
-      markerInstances.forEach(m => map.removeLayer(m));
-      markerInstances = [];
 
-      const markers = STORES[currentStoreId].markers;
+  markerInstances.forEach(m => map.removeLayer(m));
 
-      markers.forEach((data) => {
-        const isHighlight = data.id === highlightId;
-        
-        const iconHtml = `
-          <div class="marker-wrapper ${isHighlight ? 'active-highlight' : ''}">
-            <div class="marker-label">${escapeHtml(data.title)}</div>
-            <div class="pulse-pin"></div>
-          </div>
-        `;
-
-        const icon = L.divIcon({
-          className: 'custom-leaflet-icon',
-          html: iconHtml,
-          iconSize: [0, 0],
-          iconAnchor: [0, 0]
-        });
-
-        const marker = L.marker([data.y, data.x], {
-          icon: icon,
-          draggable: isEditMode
-        }).addTo(map);
-
-        let dragged = false;
-      marker.on('dragstart', () => { 
-  dragged = true; 
-});
+  markerInstances = [];
 
 
-marker.on('dragend', async (e) => {
-
-  const pos = e.target.getLatLng();
-
-  data.y = Math.round(pos.lat);
-  data.x = Math.round(pos.lng);
+  const markers = STORES[currentStoreId].markers;
 
 
-  await updateDepartmentPosition(
-    data.id,
-    data.x,
-    data.y
-  );
+  markers.forEach((data) => {
+
+    const isHighlight = data.id === highlightId;
 
 
-  setTimeout(() => { 
-    dragged = false; 
-  }, 120);
+    const iconHtml = `
+      <div class="marker-wrapper ${isHighlight ? 'active-highlight' : ''}">
+        <div class="marker-label">${escapeHtml(data.title)}</div>
+        <div class="pulse-pin"></div>
+      </div>
+    `;
 
-});
+
+    const icon = L.divIcon({
+      className: 'custom-leaflet-icon',
+      html: iconHtml,
+      iconSize: [0,0],
+      iconAnchor: [0,0]
+    });
 
 
-        marker.on('click', () => {
-          if (dragged) return;
-          if (isEditMode) {
-            openEditModal(data.id);
-          } else {
-            openSheet(data);
-          }
-        });
+    const marker = L.marker([data.y, data.x], {
+      icon: icon,
+      draggable: isEditMode
+    }).addTo(map);
 
-        markerInstances.push(marker);
-      });
-    }
 
+    let dragged = false;
+
+
+    marker.on('dragstart', () => {
+      dragged = true;
+    });
+
+
+    marker.on('dragend', async (e) => {
+
+      const pos = e.target.getLatLng();
+
+      data.y = Math.round(pos.lat);
+      data.x = Math.round(pos.lng);
+
+
+      await updateDepartmentPosition(
+        data.id,
+        data.x,
+        data.y
+      );
+
+
+      setTimeout(() => {
+        dragged = false;
+      }, 120);
+
+    });
+
+
+    marker.on('click', () => {
+
+      if (dragged) return;
+
+
+      if (isEditMode) {
+
+        openEditModal(data.id);
+
+      } else {
+
+        openSheet(data);
+
+      }
+
+    });
+
+
+    markerInstances.push(marker);
+
+  });
+
+}
     function renderUserLocationMarker() {
       if (userMarkerInstance) {
         map.removeLayer(userMarkerInstance);
