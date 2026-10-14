@@ -548,6 +548,39 @@ async function loadStoreFromSupabase(){
   return true;
 
 }
+    async function updateDepartment(id, data){
+
+  const { error } = await supabaseClient
+    .from('departments')
+    .update({
+
+      title: data.title,
+
+      description: data.desc,
+
+      promo: data.promo
+
+    })
+    .eq('id', id);
+
+
+  if(error){
+
+    console.error(
+      "Ошибка сохранения отдела:",
+      error
+    );
+
+    return false;
+
+  }
+
+
+  console.log("Отдел сохранён");
+
+  return true;
+
+}
     async function loadDepartmentImages(departmentId){
 
   const {data,error}=await supabaseClient
@@ -888,17 +921,41 @@ loadMap();
       editingMarkerId = null;
     }
 
-    function saveMarker() {
-      const marker = STORES[currentStoreId].markers.find(m => m.id === editingMarkerId);
-      if (marker) {
-        marker.title = document.getElementById('marker-title').value.trim() || "Отдел";
-        marker.desc = document.getElementById('marker-desc').value.trim();
-        marker.promo = document.getElementById('marker-promo').value.trim();
-        saveManifest();
-        renderMarkers();
-      }
-      closeModals();
-    }
+    async function saveMarker(){
+
+  const marker = STORES[currentStoreId]
+  .markers.find(m => m.id === editingMarkerId);
+
+
+  if(marker){
+
+
+    marker.title =
+    document.getElementById('marker-title').value.trim();
+
+
+    marker.desc =
+    document.getElementById('marker-desc').value.trim();
+
+
+    marker.promo =
+    document.getElementById('marker-promo').value.trim();
+
+
+    await updateDepartment(
+      marker.id,
+      marker
+    );
+
+
+    renderMarkers();
+
+  }
+
+
+  closeModals();
+
+}
 
     function deleteMarker() {
       STORES[currentStoreId].markers = STORES[currentStoreId].markers.filter(m => m.id !== editingMarkerId);
