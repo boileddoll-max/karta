@@ -444,7 +444,7 @@ let userLocation = null;
 // ===============================
 
 async function loadStoreFromSupabase(){
-
+  console.log("Текущий магазин:", currentStoreId);
   const { data: store, error } = await supabaseClient
     .from('stores')
     .select('*')
