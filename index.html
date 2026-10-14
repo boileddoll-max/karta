@@ -515,6 +515,39 @@ async function loadStoreFromSupabase(){
   return store;
 
 }
+    async function updateDepartmentPosition(id, x, y){
+
+  const { error } = await supabaseClient
+    .from('departments')
+    .update({
+      x: x,
+      y: y
+    })
+    .eq('id', id);
+
+
+  if(error){
+
+    console.error(
+      "Ошибка сохранения координат:",
+      error
+    );
+
+    return false;
+
+  }
+
+
+  console.log(
+    "Координаты сохранены:",
+    id,
+    x,
+    y
+  );
+
+  return true;
+
+}
     async function loadDepartmentImages(departmentId){
 
   const {data,error}=await supabaseClient
@@ -722,12 +755,28 @@ loadMap();
         marker.on('dragstart', () => { dragged = true; });
 
         marker.on('dragend', (e) => {
-          const pos = e.target.getLatLng();
-          data.y = Math.round(pos.lat);
-          data.x = Math.round(pos.lng);
-          saveManifest();
-          setTimeout(() => { dragged = false; }, 120);
-        });
+          marker.on('dragend', async (e) => {
+
+  const pos = e.target.getLatLng();
+
+
+  data.y = Math.round(pos.lat);
+
+  data.x = Math.round(pos.lng);
+
+
+  await updateDepartmentPosition(
+    data.id,
+    data.x,
+    data.y
+  );
+
+
+  setTimeout(() => {
+    dragged = false;
+  }, 120);
+
+});
 
         marker.on('click', () => {
           if (dragged) return;
