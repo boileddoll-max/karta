@@ -581,6 +581,50 @@ async function loadStoreFromSupabase(){
   return true;
 
 }
+    async function createDepartment(data){
+
+  const { data: newDepartment, error } = await supabaseClient
+    .from('departments')
+    .insert({
+
+      store_id: currentStoreId,
+
+      title: data.title,
+
+      description: data.desc,
+
+      promo: data.promo,
+
+      x: data.x,
+
+      y: data.y
+
+    })
+    .select()
+    .single();
+
+
+  if(error){
+
+    console.error(
+      "Ошибка создания отдела:",
+      error
+    );
+
+    return null;
+
+  }
+
+
+  console.log(
+    "Новый отдел создан:",
+    newDepartment
+  );
+
+
+  return newDepartment;
+
+}
     async function loadDepartmentImages(departmentId){
 
   const {data,error}=await supabaseClient
@@ -742,19 +786,53 @@ loadMap();
         // Добавление новой метки отдела в режиме редактора
         if (!isEditMode) return;
         const newMarker = {
-          id: Date.now(),
-          title: "Новый отдел",
-          desc: "Описание отдела",
-          promo: "",
-          x: Math.round(e.latlng.lng),
-          y: Math.round(e.latlng.lat)
-        };
-        STORES[currentStoreId].markers.push(newMarker);
-        saveManifest();
-        renderMarkers();
-        openEditModal(newMarker.id);
-      });
-    }
+
+  title: "Новый отдел",
+
+  desc: "Описание отдела",
+
+  promo: "",
+
+  x: Math.round(e.latlng.lng),
+
+  y: Math.round(e.latlng.lat)
+
+};
+
+
+const created = await createDepartment(newMarker);
+
+
+if(created){
+
+  const markerForMap = {
+
+    id: created.id,
+
+    title: created.title,
+
+    desc: created.description || "",
+
+    promo: created.promo || "",
+
+    images: [],
+
+    x: created.x,
+
+    y: created.y
+
+  };
+
+
+  STORES[currentStoreId].markers.push(markerForMap);
+
+
+  renderMarkers();
+
+
+  openEditModal(created.id);
+
+}
 
     function renderMarkers(highlightId = null) {
 
