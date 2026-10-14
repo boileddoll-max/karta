@@ -785,7 +785,7 @@ loadMap();
         }).addTo(map);
 
         let dragged = false;
-        marker.on('dragstart', () => { 
+      marker.on('dragstart', () => { 
   dragged = true; 
 });
 
@@ -795,7 +795,6 @@ marker.on('dragend', async (e) => {
   const pos = e.target.getLatLng();
 
   data.y = Math.round(pos.lat);
-
   data.x = Math.round(pos.lng);
 
 
@@ -811,6 +810,7 @@ marker.on('dragend', async (e) => {
   }, 120);
 
 });
+
 
         marker.on('click', () => {
           if (dragged) return;
