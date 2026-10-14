@@ -452,10 +452,16 @@ async function loadStoreFromSupabase(){
     .single();
 
 
- if(error){
-    console.error("Ошибка загрузки магазина:", JSON.stringify(error, null, 2));
+  if(error){
+
+    console.error(
+      "Ошибка загрузки магазина:",
+      JSON.stringify(error, null, 2)
+    );
+
     return null;
-}
+
+  }
 
 
   const { data: departments, error: depError } = await supabaseClient
@@ -465,39 +471,46 @@ async function loadStoreFromSupabase(){
 
 
   if(depError){
-    console.error("Ошибка загрузки отделов:", depError);
+
+    console.error(
+      "Ошибка загрузки отделов:",
+      JSON.stringify(depError, null, 2)
+    );
+
     return null;
+
   }
 
 
   store.markers = await Promise.all(
 
-  departments.map(async dep => {
+    departments.map(async (dep)=>{
 
-    const images = await loadDepartmentImages(dep.id);
+      const images = await loadDepartmentImages(dep.id);
 
 
-    return {
+      return {
 
-      id: dep.id,
+        id: dep.id,
 
-      title: dep.title,
+        title: dep.title,
 
-      desc: dep.description || "",
+        desc: dep.description || "",
 
-      promo: dep.promo || "",
+        promo: dep.promo || "",
 
-      images: images,
+        images: images,
 
-      x: dep.x,
+        x: dep.x,
 
-      y: dep.y
+        y: dep.y
 
-    };
+      };
 
-  })
+    })
 
-);
+  );
+
 
   return store;
 
