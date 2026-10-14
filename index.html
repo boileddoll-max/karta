@@ -765,7 +765,7 @@ loadMap();
       img.src = imgSrc;
 
       // Клик по схеме
-      map.on('click', (e) => {
+      map.on('click', async (e) => {
         // Выбор точки для QR-кода
         if (isPickingQrPoint) {
           const clickX = Math.round(e.latlng.lng);
