@@ -550,13 +550,20 @@ async function loadStoreFromSupabase(){
         document.getElementById('admin-toggle-wrapper').style.display = 'flex';
       }
 
-      // Выбор филиала из URL
-      const storeParam = params.get('store');
-      if (storeParam && STORES[storeParam]) {
-        currentStoreId = storeParam;
-      } else {
-        currentStoreId = Object.keys(STORES)[0];
-      }
+      
+// Выбор филиала
+
+const storeParam = params.get('store');
+
+if (storeParam) {
+
+  currentStoreId = storeParam;
+
+} else {
+
+  currentStoreId = "central";
+
+}
 
       // Координаты точки "Вы здесь" из QR: ?pos=X,Y
       const posParam = params.get('pos');
