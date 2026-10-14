@@ -355,12 +355,7 @@ path;
   desc: "Свежая разделка и мясная продукция",
   promo: "",
 
-  images: [
-    "donetsk_stadionnaya_3d/meat/photo_2026-08-21_11-57-21.jpg",
-    "donetsk_stadionnaya_3d/meat/photo_2026-08-21_11-57-22 (2).jpg",
-    "donetsk_stadionnaya_3d/meat/photo_2026-08-21_11-57-22 (3).jpg",
-    "donetsk_stadionnaya_3d/meat/photo_2026-08-21_11-57-22.jpg"
-  ],
+  images: [],
 
   x: 2639,
   y: 2090
@@ -371,12 +366,7 @@ path;
   desc: "Сыры, колбасы, деликатесы",
   promo: "",
 
-  images: [
-    "donetsk_stadionnaya_3d/gastro/photo_2026-06-25_09-17-09 (2).jpg",
-    "donetsk_stadionnaya_3d/gastro/photo_2026-06-25_09-17-09.jpg",
-    "donetsk_stadionnaya_3d/gastro/photo_2026-06-25_09-17-13 (2).jpg",
-    "donetsk_stadionnaya_3d/gastro/photo_2026-06-25_09-17-13.jpg"
-  ],
+  images: [],
 
   x: 2520,
   y: 1083
@@ -391,17 +381,7 @@ desc:"Свежий горячий хлеб и круассаны",
 promo:"Любую скиду или коммент сюда",
 
 
-images:[
-
-"donetsk_stadionnaya_3d/bakery/photo_2026-07-02_12-40-26.jpg",
-
-"donetsk_stadionnaya_3d/bakery/photo_2026-07-02_12-41-16.jpg",
-
-"donetsk_stadionnaya_3d/bakery/photo_2026-07-02_14-39-23.jpg",
-
-"donetsk_stadionnaya_3d/bakery/photo_2026-08-27_08-40-15.jpg"
-
-],
+images:[],
 
 
 x:3162,
@@ -447,16 +427,18 @@ y:2823
       }
     };
 
-    let STORES = JSON.parse(localStorage.getItem('stores_network_saved_v3')) || structuredClone(BUILTIN_STORES);
-    let currentStoreId = "central";
-    let isEditMode = false;
-    let isPickingQrPoint = false;
-    let map = null;
-    let imageLayer = null;
-    let markerInstances = [];
-    let userMarkerInstance = null;
-    let editingMarkerId = null;
-    let userLocation = null;
+    let STORES = {};
+
+let currentStoreId = "central";
+
+let isEditMode = false;
+let isPickingQrPoint = false;
+let map = null;
+let imageLayer = null;
+let markerInstances = [];
+let userMarkerInstance = null;
+let editingMarkerId = null;
+let userLocation = null;
 // ===============================
 // Загрузка данных из Supabase
 // ===============================
@@ -488,24 +470,59 @@ async function loadStoreFromSupabase(){
   }
 
 
-  store.markers = departments.map(dep => ({
+  store.markers = await Promise.all(
 
-    id: dep.id,
+  departments.map(async dep => {
 
-    title: dep.title,
+    const images = await loadDepartmentImages(dep.id);
 
-    desc: dep.description || "",
 
-    promo: dep.promo || "",
+    return {
 
-    x: dep.x,
+      id: dep.id,
 
-    y: dep.y
+      title: dep.title,
 
-  }));
+      desc: dep.description || "",
+
+      promo: dep.promo || "",
+
+      images: images,
+
+      x: dep.x,
+
+      y: dep.y
+
+    };
+
+  })
+
+);
+
+  }
 
 
   return store;
+
+}
+    async function loadDepartmentImages(departmentId){
+
+  const {data,error}=await supabaseClient
+    .from('department_images')
+    .select('*')
+    .eq('department_id', departmentId)
+    .order('sort_order');
+
+
+  if(error){
+
+    console.error(error);
+    return [];
+
+  }
+
+
+  return data.map(img=>img.url);
 
 }
 
@@ -549,7 +566,9 @@ const supabaseStore = await loadStoreFromSupabase();
 
 if(supabaseStore){
 
-  STORES[currentStoreId] = supabaseStore;
+  STORES[currentStoreId] = {
+    [currentStoreId]: supabaseStore
+  };
 
 }
 
