@@ -273,7 +273,12 @@
 
     <!-- Поиск для покупателей -->
     <div id="search-box">
-      <input type="text" id="search-input" placeholder="🔍 Что ищете? Молоко, хлеб, масло, сыр...">
+      <input
+  type="text"
+  id="search-input"
+  placeholder="🔍 Что ищете? Молоко, хлеб, масло, сыр..."
+  oninput="searchDepts(this.value)"
+>
     </div>
 
     <!-- Инструменты администратора -->
@@ -2088,15 +2093,6 @@ function normalizeSearch(text) {
     .trim();
 }
 
-function normalizeSearch(text) {
-  return String(text || "")
-    .toLowerCase()
-    .replace(/ё/g, "е")
-    .replace(/[^\p{L}\p{N}\s]/gu, " ")
-    .replace(/\s+/g, " ")
-    .trim();
-}
-
 function searchDepts(query) {
 
   const search = normalizeSearch(query);
@@ -2134,17 +2130,11 @@ function searchDepts(query) {
   }
 
   // Подсвечиваем найденный отдел
-  renderMarkers(found.id);
+renderMarkers(found.id);
 
-  // Передвигаем карту к найденной метке
-  map.flyTo(
-    [Number(found.y), Number(found.x)],
-    Math.max(map.getZoom(), -0.3),
-    { animate: true, duration: 0.8 }
-  );
-
-  // Открываем информацию об отделе
-  openSheet(found);
+// Открываем карточку.
+// openSheet уже перемещает карту к метке.
+openSheet(found);
 
 }
 
