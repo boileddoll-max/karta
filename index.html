@@ -634,6 +634,36 @@ let markerInstances = [];
 let userMarkerInstance = null;
 let editingMarkerId = null;
 let userLocation = null;
+
+    // =====================================
+// СПИСОК МАГАЗИНОВ ИЗ SUPABASE
+// =====================================
+
+async function loadStoresList() {
+
+  const { data, error } = await supabaseClient
+    .from("stores")
+    .select("*")
+    .order("name");
+
+  if (error) {
+    console.error("Ошибка загрузки магазинов:", error);
+    throw error;
+  }
+
+  STORES = {};
+
+  for (const store of data || []) {
+    STORES[store.id] = {
+      ...store,
+      markers: []
+    };
+  }
+
+  updateStoreSelect();
+
+  return data || [];
+}
 // ===============================
 // Загрузка данных из Supabase
 // ===============================
@@ -1255,17 +1285,24 @@ if (storeParam) {
 
       updateStoreSelect();
 
-const supabaseStore = await loadStoreFromSupabase();
+// Получаем список филиалов
+const stores = await loadStoresList();
 
-if(supabaseStore){
-
-  STORES[currentStoreId] = supabaseStore;
-
+if (!stores.length) {
+  alert("В Supabase пока нет магазинов.");
+  return;
 }
 
-updateStoreSelect();
+// Если магазин из URL существует — выбираем его.
+// Иначе выбираем central или первый доступный.
+if (!STORES[currentStoreId]) {
+  currentStoreId = STORES.central
+    ? "central"
+    : stores[0].id;
+}
 
-loadMap();
+// Загружаем выбранный магазин с отделами
+await changeStore(currentStoreId);
     }
 
     function updateStoreSelect() {
@@ -1293,11 +1330,17 @@ loadMap();
 
       const store = STORES[currentStoreId];
       
-      // Сначала проверяем сохраненную картинку, иначе берем fon.png
-      let imgSrc = await idb.getImage("img_" + currentStoreId);
-      if (!imgSrc) {
-        imgSrc = store.image || "fon.png";
-      }
+
+     // Берём фоновую схему из Supabase,
+// а для старой карты поддерживаем локальный fon.png
+let imgSrc = store.image || "fon.png";
+
+if (
+  imgSrc.startsWith("store-maps/") ||
+  imgSrc.startsWith("donetsk_stadionnaya_3d/")
+) {
+  imgSrc = getStorageUrl(imgSrc);
+}
 
             // Определяем реальные размеры фоновой карты
       const img = new Image();
@@ -1536,13 +1579,56 @@ function renderMarkers(highlightId = null) {
       return String(text).replace(/[&<>"']/g, m => map[m]);
     }
 
-    function changeStore(storeId) {
-      currentStoreId = storeId;
-      userLocation = null;
-      closeSheet();
-      closeModals();
-      loadMap();
+   // =====================================
+// ПЕРЕКЛЮЧЕНИЕ МАГАЗИНА
+// =====================================
+
+async function changeStore(storeId) {
+
+  if (!STORES[storeId]) {
+    alert("Магазин не найден.");
+    return;
+  }
+
+  const previousStoreId = currentStoreId;
+
+  currentStoreId = storeId;
+
+  try {
+
+    // Загружаем магазин вместе с его отделами и фото
+    const store = await loadStoreFromSupabase();
+
+    if (!store) {
+      throw new Error("Не удалось загрузить магазин.");
     }
+
+    STORES[storeId] = store;
+
+    userLocation = null;
+
+    closeSheet();
+    closeModals();
+
+    updateStoreSelect();
+
+    await loadMap();
+
+  } catch (error) {
+
+    currentStoreId = previousStoreId;
+    updateStoreSelect();
+
+    console.error("Ошибка переключения магазина:", error);
+
+    alert(
+      "Не удалось открыть магазин:\n" +
+      (error.message || "Неизвестная ошибка")
+    );
+
+  }
+
+}
 
     function toggleEditMode(enabled) {
 
@@ -1563,25 +1649,166 @@ function renderMarkers(highlightId = null) {
   renderMarkers();
 }
 
-    async function handleImageUpload(e) {
-      const file = e.target.files[0];
-      if (!file) return;
+    // =====================================
+// ЗАГРУЗКА СХЕМЫ МАГАЗИНА
+// =====================================
 
-      const reader = new FileReader();
-      reader.onload = function(event) {
-        const dataUrl = event.target.result;
-        const img = new Image();
-        img.onload = async function() {
-          STORES[currentStoreId].width = this.naturalWidth;
-          STORES[currentStoreId].height = this.naturalHeight;
-          saveManifest();
-          await idb.setImage("img_" + currentStoreId, dataUrl);
-          loadMap();
-        };
-        img.src = dataUrl;
+async function handleImageUpload(event) {
+
+  const file = event.target.files?.[0];
+
+  if (!file) return;
+
+  if (!adminAuthorized) {
+    alert("Доступно только администратору.");
+    event.target.value = "";
+    return;
+  }
+
+  const allowedTypes = [
+    "image/jpeg",
+    "image/png",
+    "image/webp"
+  ];
+
+  if (!allowedTypes.includes(file.type)) {
+    alert("Допустимы изображения JPG, PNG и WEBP.");
+    event.target.value = "";
+    return;
+  }
+
+  if (file.size > 15 * 1024 * 1024) {
+    alert("Размер схемы не должен превышать 15 МБ.");
+    event.target.value = "";
+    return;
+  }
+
+  const storeId = currentStoreId;
+  const store = STORES[storeId];
+
+  const oldImage = store.image;
+
+  let uploadedPath = null;
+
+  try {
+
+    // Определяем реальные размеры изображения
+    const dimensions = await new Promise((resolve, reject) => {
+
+      const image = new Image();
+      const objectUrl = URL.createObjectURL(file);
+
+      image.onload = () => {
+
+        URL.revokeObjectURL(objectUrl);
+
+        resolve({
+          width: image.naturalWidth,
+          height: image.naturalHeight
+        });
+
       };
-      reader.readAsDataURL(file);
+
+      image.onerror = () => {
+        URL.revokeObjectURL(objectUrl);
+        reject(new Error("Не удалось прочитать изображение."));
+      };
+
+      image.src = objectUrl;
+
+    });
+
+    const extension =
+      file.type === "image/png" ? "png" :
+      file.type === "image/webp" ? "webp" : "jpg";
+
+    const path =
+      "store-maps/" +
+      storeId + "/" +
+      Date.now() + "_" +
+      Math.random().toString(36).slice(2, 10) +
+      "." + extension;
+
+    // Загружаем новую фоновую схему
+    const { error: uploadError } =
+      await supabaseClient.storage
+        .from("store-images")
+        .upload(path, file, {
+          contentType: file.type,
+          upsert: false
+        });
+
+    if (uploadError) throw uploadError;
+
+    uploadedPath = path;
+
+    // Сохраняем путь и размеры в таблице stores
+    const { data, error: dbError } =
+      await supabaseClient
+        .from("stores")
+        .update({
+          image: path,
+          width: dimensions.width,
+          height: dimensions.height
+        })
+        .eq("id", storeId)
+        .select()
+        .single();
+
+    if (dbError) throw dbError;
+
+    store.image = data.image;
+    store.width = data.width;
+    store.height = data.height;
+
+    // Удаляем старую схему, только если она была
+    // загружена через наш новый механизм
+    if (oldImage?.startsWith("store-maps/" + storeId + "/")) {
+
+      const { error: removeError } =
+        await supabaseClient.storage
+          .from("store-images")
+          .remove([oldImage]);
+
+      if (removeError) {
+        console.warn(
+          "Старую схему удалить не удалось:",
+          removeError
+        );
+      }
+
     }
+
+    await loadMap();
+
+    alert("Схема магазина сохранена в Supabase.");
+
+  } catch (error) {
+
+    console.error("Ошибка загрузки схемы:", error);
+
+    // Если файл загрузился, а БД не обновилась,
+    // пытаемся удалить неиспользуемый файл
+    if (uploadedPath && store.image !== uploadedPath) {
+
+      await supabaseClient.storage
+        .from("store-images")
+        .remove([uploadedPath]);
+
+    }
+
+    alert(
+      "Не удалось сохранить схему:\n" +
+      (error.message || "Неизвестная ошибка")
+    );
+
+  } finally {
+
+    event.target.value = "";
+
+  }
+
+}
 
     function openEditModal(markerId) {
       editingMarkerId = markerId;
@@ -1837,38 +2064,196 @@ expandBtn.setAttribute('aria-label', 'Развернуть карточку');
       }
     }
 
-    function createNewStorePrompt() {
-      const name = prompt("Название нового магазина (например: Филиал на Мира):");
-      if (!name) return;
-      const id = "store_" + Date.now();
-      STORES[id] = { name: name, image: "fon.png", width: 4961, height: 3508, markers: [] };
-      saveManifest();
-      updateStoreSelect();
-      changeStore(id);
+    // =====================================
+// СОЗДАНИЕ НОВОГО МАГАЗИНА
+// =====================================
+
+async function createNewStorePrompt() {
+
+  if (!adminAuthorized) {
+    alert("Доступно только администратору.");
+    return;
+  }
+
+  const name = prompt(
+    "Название нового магазина:\nНапример: г. Донецк, проспект Ильича, 23Д"
+  );
+
+  if (!name || !name.trim()) return;
+
+  const storeId = "store_" + Date.now();
+
+  const { data, error } = await supabaseClient
+    .from("stores")
+    .insert({
+      id: storeId,
+      name: name.trim(),
+      image: "fon.png",
+      width: 3508,
+      height: 4961
+    })
+    .select()
+    .single();
+
+  if (error) {
+
+    console.error("Ошибка создания магазина:", error);
+
+    alert(
+      "Не удалось создать магазин:\n" +
+      error.message
+    );
+
+    return;
+  }
+
+  STORES[data.id] = {
+    ...data,
+    markers: []
+  };
+
+  updateStoreSelect();
+
+  await changeStore(data.id);
+
+  alert(
+    "Магазин создан в Supabase.\n\n" +
+    "Теперь нажми «Сменить картинку» и загрузи схему нового магазина."
+  );
+
+}
+
+    // =====================================
+// ПЕРЕИМЕНОВАНИЕ МАГАЗИНА
+// =====================================
+
+async function renameStorePrompt() {
+
+  if (!adminAuthorized) {
+    alert("Доступно только администратору.");
+    return;
+  }
+
+  const store = STORES[currentStoreId];
+
+  const newName = prompt(
+    "Новое название магазина:",
+    store.name
+  );
+
+  if (!newName || !newName.trim()) return;
+
+  const { data, error } = await supabaseClient
+    .from("stores")
+    .update({
+      name: newName.trim()
+    })
+    .eq("id", currentStoreId)
+    .select()
+    .single();
+
+  if (error) {
+
+    console.error("Ошибка переименования:", error);
+
+    alert(
+      "Не удалось изменить название:\n" +
+      error.message
+    );
+
+    return;
+  }
+
+  store.name = data.name;
+
+  updateStoreSelect();
+
+  alert("Название магазина сохранено.");
+
+}
+
+    // =====================================
+// УДАЛЕНИЕ МАГАЗИНА ИЗ SUPABASE
+// =====================================
+
+async function deleteStorePrompt() {
+
+  if (!adminAuthorized) {
+    alert("Доступно только администратору.");
+    return;
+  }
+
+  const storeIds = Object.keys(STORES);
+
+  if (storeIds.length <= 1) {
+    alert("Нельзя удалить единственный магазин.");
+    return;
+  }
+
+  const storeId = currentStoreId;
+  const store = STORES[storeId];
+
+  const confirmed = confirm(
+    `Удалить магазин «${store.name}»?\n\n` +
+    "Все его отделы, метки, описания, акции и " +
+    "привязки фотографий будут удалены.\n\n" +
+    "Операция необратима."
+  );
+
+  if (!confirmed) return;
+
+  try {
+
+    const { data, error } = await supabaseClient
+      .rpc("admin_delete_store", {
+        p_store_id: storeId
+      });
+
+    if (error) throw error;
+
+    if (data !== true) {
+      throw new Error("Supabase не подтвердил удаление.");
     }
 
-    function renameStorePrompt() {
-      const newName = prompt("Новое название магазина:", STORES[currentStoreId].name);
-      if (!newName) return;
-      STORES[currentStoreId].name = newName;
-      saveManifest();
-      updateStoreSelect();
-    }
+    // Удаляем фоновую схему после успешного удаления
+    // магазина из базы
+    if (store.image?.startsWith("store-maps/" + storeId + "/")) {
 
-    async function deleteStorePrompt() {
-      if (Object.keys(STORES).length <= 1) {
-        alert("Нельзя удалить единственный филиал.");
-        return;
+      const { error: storageError } =
+        await supabaseClient.storage
+          .from("store-images")
+          .remove([store.image]);
+
+      if (storageError) {
+        console.warn(
+          "Магазин удалён, но фоновая схема осталась:",
+          storageError
+        );
       }
-      if (!confirm(`Удалить филиал «${STORES[currentStoreId].name}»?`)) return;
 
-      await idb.deleteImage("img_" + currentStoreId);
-      delete STORES[currentStoreId];
-      saveManifest();
-      currentStoreId = Object.keys(STORES)[0];
-      updateStoreSelect();
-      changeStore(currentStoreId);
     }
+
+    // Удаляем магазин из списка в браузере
+    delete STORES[storeId];
+
+    const nextStoreId = Object.keys(STORES)[0];
+
+    await changeStore(nextStoreId);
+
+    alert("Магазин удалён из Supabase.");
+
+  } catch (error) {
+
+    console.error("Ошибка удаления магазина:", error);
+
+    alert(
+      "Не удалось удалить магазин:\n" +
+      (error.message || "Неизвестная ошибка")
+    );
+
+  }
+
+}
 
     function exportConfig() {
       const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(STORES, null, 2));
