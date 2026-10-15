@@ -865,28 +865,55 @@ function renderAdminDepartmentPhotos() {
   if (!marker) return;
 
   if (!marker.images || marker.images.length === 0) {
-
     container.innerHTML =
       '<p style="grid-column:1/-1;color:#888;font-size:13px;">Фотографий пока нет</p>';
-
     return;
   }
 
   marker.images.forEach(path => {
 
+    const wrapper = document.createElement("div");
+
+    wrapper.style.position = "relative";
+
     const img = document.createElement("img");
 
     img.src = getStorageUrl(path);
     img.loading = "lazy";
-
     img.style.width = "100%";
-    img.style.aspectRatio = "1/1";
+    img.style.aspectRatio = "1 / 1";
     img.style.objectFit = "cover";
     img.style.borderRadius = "10px";
+    img.style.display = "block";
 
-    container.appendChild(img);
+    const deleteBtn = document.createElement("button");
+
+    deleteBtn.type = "button";
+    deleteBtn.textContent = "×";
+    deleteBtn.title = "Удалить фотографию";
+    deleteBtn.setAttribute("aria-label", "Удалить фотографию");
+
+    deleteBtn.style.position = "absolute";
+    deleteBtn.style.top = "5px";
+    deleteBtn.style.right = "5px";
+    deleteBtn.style.width = "30px";
+    deleteBtn.style.height = "30px";
+    deleteBtn.style.padding = "0";
+    deleteBtn.style.background = "#dc2626";
+    deleteBtn.style.color = "#fff";
+    deleteBtn.style.borderRadius = "50%";
+    deleteBtn.style.fontSize = "22px";
+
+    deleteBtn.onclick = () => {
+      deleteDepartmentPhoto(path, deleteBtn);
+    };
+
+    wrapper.appendChild(img);
+    wrapper.appendChild(deleteBtn);
+    container.appendChild(wrapper);
 
   });
+
 }
 
 
@@ -1025,6 +1052,130 @@ async function uploadDepartmentPhotos(event) {
 
     event.target.value = "";
     event.target.disabled = false;
+
+  }
+
+}
+    // =====================================
+// УДАЛЕНИЕ ФОТОГРАФИИ ОТДЕЛА
+// =====================================
+
+async function deleteDepartmentPhoto(path, button) {
+
+  if (!adminAuthorized || !editingMarkerId) {
+    alert("Необходимо войти как администратор.");
+    return;
+  }
+
+  const departmentId = editingMarkerId;
+
+  const marker = STORES[currentStoreId].markers.find(
+    m => m.id === departmentId
+  );
+
+  if (!marker) {
+    alert("Отдел не найден.");
+    return;
+  }
+
+  const confirmed = confirm(
+    "Удалить эту фотографию из отдела?\n\n" +
+    "Она исчезнет с карты у всех покупателей."
+  );
+
+  if (!confirmed) return;
+
+  const status =
+    document.getElementById("admin-photo-status");
+
+  button.disabled = true;
+  status.textContent = "Удаление фотографии...";
+
+  try {
+
+    // 1. Удаляем привязку изображения к отделу
+    const { data: deletedRows, error: dbError } =
+      await supabaseClient
+        .from("department_images")
+        .delete()
+        .eq("department_id", departmentId)
+        .eq("url", path)
+        .select("id");
+
+    if (dbError) {
+      throw dbError;
+    }
+
+    if (!deletedRows || deletedRows.length === 0) {
+      throw new Error(
+        "Запись фотографии не найдена или нет прав на удаление."
+      );
+    }
+
+    // 2. Убираем фото из текущего отдела на странице
+    marker.images = (marker.images || [])
+      .filter(imgPath => imgPath !== path);
+
+    renderAdminDepartmentPhotos();
+
+    // 3. Проверяем, не используется ли файл в других отделах
+    const { count, error: countError } =
+      await supabaseClient
+        .from("department_images")
+        .select("id", {
+          count: "exact",
+          head: true
+        })
+        .eq("url", path);
+
+    if (countError) {
+      status.textContent =
+        "Фото удалено из отдела. Проверить файл в Storage не удалось.";
+      return;
+    }
+
+    // Физически удаляем файл, только если он больше
+    // нигде не используется
+    if (count === 0) {
+
+      const { error: storageError } =
+        await supabaseClient.storage
+          .from("store-images")
+          .remove([path]);
+
+      if (storageError) {
+        console.error(
+          "Ошибка удаления файла из Storage:",
+          storageError
+        );
+
+        status.textContent =
+          "Фото удалено с карты, но файл остался в Storage: " +
+          storageError.message;
+
+        return;
+      }
+
+    }
+
+    status.textContent = "Фотография удалена.";
+
+  } catch (error) {
+
+    console.error("Ошибка удаления фотографии:", error);
+
+    status.textContent =
+      "Ошибка удаления: " +
+      (error.message || "Неизвестная ошибка");
+
+    alert(
+      "Не удалось удалить фотографию:\n\n" +
+      (error.message || "Неизвестная ошибка")
+    );
+
+  } finally {
+
+    button.disabled = false;
 
   }
 
