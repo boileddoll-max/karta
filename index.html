@@ -828,11 +828,16 @@ if(created){
 
   renderMarkers();
 
-  openEditModal(created.id);
+   openEditModal(created.id);
 
-}
+} // Закрыли if (created)
 
-    function renderMarkers(highlightId = null) {
+}); // Закрыли обработчик map.on('click', async (e) => {...})
+
+} // Закрыли функцию loadMap()
+
+
+function renderMarkers(highlightId = null) {
 
   markerInstances.forEach(m => map.removeLayer(m));
 
