@@ -246,6 +246,150 @@
   object-fit:cover;
   border-radius:14px;
 }
+    /* =========================================
+   МОБИЛЬНАЯ ВЕРСИЯ ГЕРКУЛЕС MOLOKO
+   ========================================= */
+
+#search-box {
+  position: relative;
+}
+
+#search-input {
+  min-width: 0;
+  width: 100%;
+}
+
+#search-results {
+  display: none;
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  right: 0;
+  z-index: 1100;
+  max-height: 260px;
+  overflow-y: auto;
+  background: #fff;
+  border: 1px solid #d3d3d3;
+  border-radius: 12px;
+  box-shadow: 0 8px 22px rgba(0,0,0,0.17);
+}
+
+.search-result-item {
+  display: block;
+  width: 100%;
+  padding: 12px 14px;
+  text-align: left;
+  background: #fff;
+  color: #222;
+  border: 0;
+  border-bottom: 1px solid #eee;
+  border-radius: 0;
+}
+
+.search-result-item:hover {
+  background: #eef5fb;
+}
+
+.search-result-item strong {
+  display: block;
+  font-size: 14px;
+}
+
+.search-result-item small {
+  display: block;
+  margin-top: 3px;
+  color: #6b7280;
+  font-size: 12px;
+}
+
+.search-empty {
+  padding: 14px;
+  font-size: 13px;
+  color: #666;
+}
+
+@media (max-width: 600px) {
+
+  #top-bar {
+    top: max(8px, env(safe-area-inset-top));
+    left: 8px;
+    right: 8px;
+    width: auto;
+    max-width: none;
+    padding: 10px;
+    border-radius: 14px;
+    gap: 9px;
+  }
+
+  #top-bar .top-row {
+    gap: 6px;
+    flex-wrap: wrap;
+  }
+
+  #top-bar .top-row > label[for="store-select"] {
+    font-size: 12px;
+  }
+
+  #store-select {
+    flex: 1 1 130px !important;
+    min-width: 0;
+    max-width: 100%;
+    height: 42px;
+    font-size: 13px;
+  }
+
+  #search-input {
+    height: 48px;
+    border: 2px solid #004b85;
+    border-radius: 11px;
+    padding: 0 13px;
+    font-size: 16px;
+    background: #fff;
+  }
+
+  #bottom-sheet {
+    width: 100%;
+    max-width: 100%;
+    padding: 16px;
+    padding-bottom: max(16px, env(safe-area-inset-bottom));
+    border-radius: 18px 18px 0 0;
+    height: 240px;
+  }
+
+  #bottom-sheet.expanded {
+    height: 85dvh;
+  }
+
+  .sheet-expand-btn {
+    min-width: 44px;
+    min-height: 44px;
+  }
+
+  .pulse-pin {
+    width: 27px;
+    height: 27px;
+  }
+
+  .marker-label {
+    font-size: 12px;
+    padding: 4px 8px;
+  }
+
+  #admin-panel {
+    max-height: 45dvh;
+    overflow-y: auto;
+  }
+
+  #admin-panel .admin-buttons button {
+    min-height: 44px;
+  }
+
+  .modal-box {
+    width: calc(100% - 24px);
+    max-height: 85dvh;
+    overflow-y: auto;
+  }
+}
   </style>
 </head>
 <body>
@@ -273,13 +417,18 @@
 
     <!-- Поиск для покупателей -->
     <div id="search-box">
-      <input
-  type="text"
-  id="search-input"
-  placeholder="🔍 Что ищете? Молоко, хлеб, масло, сыр..."
-  oninput="searchDepts(this.value)"
->
-    </div>
+
+  <input
+    type="text"
+    id="search-input"
+    placeholder="🔍 Найти товар или отдел..."
+    autocomplete="off"
+    oninput="scheduleProductSearch(this.value)"
+  >
+
+  <div id="search-results"></div>
+
+</div>
 
     <!-- Инструменты администратора -->
     <div id="admin-panel">
@@ -449,6 +598,42 @@ const supabaseClient = supabase.createClient(
   SUPABASE_KEY
 );
 const ADMIN_UID = "2e81865d-b6c7-4585-a5fa-10a211abf137";
+    // =====================================
+// АНАЛИТИКА КАРТЫ
+// =====================================
+
+async function trackMapEvent(eventType, details = {}) {
+
+  // Действия администратора не учитываем
+  if (adminAuthorized) return;
+
+  const storeId = details.store_id || currentStoreId;
+
+  if (!storeId) return;
+
+  try {
+
+    const { error } = await supabaseClient
+      .from("map_analytics")
+      .insert({
+        store_id: storeId,
+        event_type: eventType,
+        department_id:
+          details.department_id == null
+            ? null
+            : String(details.department_id),
+        search_query: details.search_query || null
+      });
+
+    if (error) {
+      console.warn("Ошибка аналитики:", error.message);
+    }
+
+  } catch (error) {
+    console.warn("Аналитика недоступна:", error);
+  }
+
+}
 
 let adminAuthorized = false;
 
@@ -1321,6 +1506,13 @@ if (!STORES[currentStoreId]) {
 
 // Загружаем выбранный магазин с отделами
 await changeStore(currentStoreId);
+      // Фиксируем открытие карты
+trackMapEvent("map_open");
+
+// Если карта открыта по QR-ссылке ?pos=X,Y
+if (params.has("pos")) {
+  trackMapEvent("qr_open");
+}
     }
 
     function updateStoreSelect() {
@@ -1501,9 +1693,10 @@ function renderMarkers(highlightId = null) {
 
 
     const marker = L.marker([data.y, data.x], {
-      icon: icon,
-      draggable: isEditMode
-    }).addTo(map);
+  icon: icon,
+  draggable: isEditMode,
+  bubblingMouseEvents: false
+}).addTo(map);
 
 
     let dragged = false;
@@ -1627,7 +1820,10 @@ async function changeStore(storeId) {
 
     STORES[storeId] = store;
 
-    userLocation = null;
+    // Сбрасываем QR-точку только при реальном переключении магазина
+if (previousStoreId !== storeId) {
+  userLocation = null;
+}
 
     closeSheet();
     closeModals();
@@ -1988,7 +2184,10 @@ document.getElementById("admin-photo-status").textContent = "";
 
 }
 
-    function openSheet(data) {
+    function openSheet(data) {// Считаем открытие карточки отдела
+trackMapEvent("department_open", {
+  department_id: data.id
+});
       document.getElementById('sheet-title').innerText = data.title;
       document.getElementById('sheet-desc').innerText = data.desc;
     const imagesEl =
@@ -2038,10 +2237,44 @@ expandBtn.innerHTML = '&#9650;';
 expandBtn.setAttribute('aria-expanded', 'false');
 expandBtn.setAttribute('aria-label', 'Развернуть карточку');
       document.getElementById('bottom-sheet').classList.add('open');
-      map.flyTo(
+      // Центрируем выбранный отдел на карте
+const targetZoom = Math.min(
+  map.getMaxZoom(),
+  Math.max(map.getZoom(), -0.3)
+);
+
+// После перемещения сдвигаем карту,
+// чтобы карточка не закрывала метку
+if (window.innerWidth <= 600) {
+
+  map.once("moveend", () => {
+
+    const sheet =
+      document.getElementById("bottom-sheet");
+
+    if (!sheet.classList.contains("open")) return;
+
+    const offset = Math.min(
+      Math.max(sheet.offsetHeight / 2 - 30, 0),
+      140
+    );
+
+    map.panBy([0, offset], {
+      animate: true,
+      duration: 0.25
+    });
+
+  });
+
+}
+
+map.flyTo(
   [Number(data.y), Number(data.x)],
-  Math.max(map.getZoom(), -0.3),
-  { animate: true, duration: 0.8 }
+  targetZoom,
+  {
+    animate: true,
+    duration: 0.7
+  }
 );
     }
     function toggleSheetExpand() {
@@ -2084,6 +2317,12 @@ expandBtn.setAttribute('aria-label', 'Развернуть карточку');
 // УМНЫЙ ПОИСК ТОВАРОВ И ОТДЕЛОВ
 // =====================================
 
+// =====================================
+// МОБИЛЬНЫЙ ПОИСК ТОВАРОВ
+// =====================================
+
+let productSearchTimer = null;
+
 function normalizeSearch(text) {
   return String(text || "")
     .toLowerCase()
@@ -2093,14 +2332,141 @@ function normalizeSearch(text) {
     .trim();
 }
 
+// Задержка, чтобы поиск не дёргался
+function scheduleProductSearch(query) {
+
+  clearTimeout(productSearchTimer);
+
+  productSearchTimer = setTimeout(() => {
+    searchDepts(query);
+  }, 280);
+
+}
+
+// Выбор результата из подсказок
+function selectSearchDepartment(marker) {
+
+  clearTimeout(productSearchTimer);
+
+  const input = document.getElementById("search-input");
+  const results = document.getElementById("search-results");
+
+  input.value = marker.title;
+  results.style.display = "none";
+
+  // На телефоне убираем клавиатуру
+  input.blur();
+
+  // Подсвечиваем отдел
+  renderMarkers(marker.id);
+
+  // Открываем карточку и перемещаем карту
+  openSheet(marker);
+
+}
+
+// Отрисовываем список найденных отделов
+function showProductSearchResults(matches, query) {
+
+  const container =
+    document.getElementById("search-results");
+
+  container.innerHTML = "";
+
+  if (!query) {
+    container.style.display = "none";
+    return;
+  }
+
+  container.style.display = "block";
+
+  if (matches.length === 0) {
+
+    const empty = document.createElement("div");
+
+    empty.className = "search-empty";
+    empty.textContent = "Ничего не найдено";
+
+    container.appendChild(empty);
+    return;
+  }
+
+  matches.slice(0, 5).forEach(marker => {
+
+    const button = document.createElement("button");
+
+    button.type = "button";
+    button.className = "search-result-item";
+
+    const title = document.createElement("strong");
+    title.textContent = marker.title;
+
+    const subtitle = document.createElement("small");
+    subtitle.textContent =
+      (marker.searchProducts || marker.desc || "")
+        .replace(/\s+/g, " ")
+        .slice(0, 100);
+
+    button.appendChild(title);
+    button.appendChild(subtitle);
+
+    button.addEventListener("click", () => {
+      selectSearchDepartment(marker);
+    });
+
+    container.appendChild(button);
+
+  });
+
+}
+
+// =====================================
+// СТАТИСТИКА ПОИСКА
+// =====================================
+
+let analyticsSearchTimer = null;
+
+function trackSearchWithDelay(query) {
+
+  clearTimeout(analyticsSearchTimer);
+
+  const search = normalizeSearch(query).slice(0, 100);
+
+  // Не считаем пустые и однобуквенные запросы
+  if (search.length < 2) return;
+
+  const storeId = currentStoreId;
+
+  analyticsSearchTimer = setTimeout(() => {
+
+    trackMapEvent("search", {
+      store_id: storeId,
+      search_query: search
+    });
+
+  }, 1000);
+
+}
+// Основной поиск
 function searchDepts(query) {
 
   const search = normalizeSearch(query);
+  trackSearchWithDelay(query);
+
+  const resultsEl =
+    document.getElementById("search-results");
 
   if (!search) {
-    renderMarkers();
+
+    resultsEl.style.display = "none";
+
+    if (map && STORES[currentStoreId]) {
+      renderMarkers();
+    }
+
     closeSheet();
     return;
+
   }
 
   const store = STORES[currentStoreId];
@@ -2111,30 +2477,32 @@ function searchDepts(query) {
 
   const words = search.split(" ");
 
-  const found = store.markers.find(marker => {
+  const matches = store.markers.filter(marker => {
 
-    const text = normalizeSearch([
+    const searchableText = normalizeSearch([
       marker.title,
       marker.desc,
       marker.searchProducts
     ].join(" "));
 
-    return words.every(word => text.includes(word));
+    return words.every(word =>
+      searchableText.includes(word)
+    );
 
   });
 
-  if (!found) {
+  // Показываем варианты под поисковой строкой
+  showProductSearchResults(matches, search);
+
+  if (!matches.length) {
     renderMarkers();
     closeSheet();
     return;
   }
 
-  // Подсвечиваем найденный отдел
-renderMarkers(found.id);
-
-// Открываем карточку.
-// openSheet уже перемещает карту к метке.
-openSheet(found);
+  // Подсвечиваем первый найденный отдел.
+  // Карточку откроем после выбора подсказки.
+  renderMarkers(matches[0].id);
 
 }
 
