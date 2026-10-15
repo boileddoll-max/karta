@@ -273,7 +273,7 @@
 
     <!-- Поиск для покупателей -->
     <div id="search-box">
-      <input type="text" id="search-input" placeholder="🔍 Найти отдел (овощи, пекарня...)" oninput="searchDepts(this.value)">
+      <input type="text" id="search-input" placeholder="🔍 Что ищете? Молоко, хлеб, масло, сыр...">
     </div>
 
     <!-- Инструменты администратора -->
@@ -379,6 +379,18 @@
     <textarea id="marker-desc" rows="3"></textarea>
     <label>Акция (необязательно)</label>
     <input type="text" id="marker-promo" placeholder="Например: Скидка 20% после 20:00">
+    <label>Товары для поиска</label>
+
+<textarea
+  id="marker-search-products"
+  rows="4"
+  placeholder="Сливочное масло, молоко, кефир, сметана, йогурт"
+></textarea>
+
+<p style="font-size:12px;color:#777;margin-top:5px;">
+  Перечисли товары через запятую или с новой строки.
+  Покупатели смогут искать отдел по этим словам.
+</p>
     <!-- Фотографии отдела -->
 <div style="margin-top:16px; border-top:1px solid #ddd; padding-top:14px;">
 
@@ -724,6 +736,8 @@ async function loadStoreFromSupabase(){
 
         promo: dep.promo || "",
 
+        searchProducts: dep.search_products || "",
+
         images: images,
 
         x: dep.x,
@@ -778,14 +792,11 @@ async function loadStoreFromSupabase(){
   const { error } = await supabaseClient
     .from('departments')
     .update({
-
-      title: data.title,
-
-      description: data.desc,
-
-      promo: data.promo
-
-    })
+  title: data.title,
+  description: data.desc,
+  promo: data.promo,
+  search_products: data.searchProducts || ""
+})
     .eq('id', id);
 
 
@@ -819,6 +830,8 @@ async function loadStoreFromSupabase(){
       description: data.desc,
 
       promo: data.promo,
+
+      search_products: data.searchProducts || "",
 
       x: data.x,
 
@@ -1425,6 +1438,8 @@ if(created){
 
     promo: created.promo || "",
 
+    searchProducts: created.search_products || "",
+
     images: [],
 
     x: created.x,
@@ -1818,6 +1833,8 @@ async function handleImageUpload(event) {
       document.getElementById('marker-title').value = marker.title;
       document.getElementById('marker-desc').value = marker.desc;
       document.getElementById('marker-promo').value = marker.promo;
+      document.getElementById("marker-search-products").value =
+  marker.searchProducts || "";
       // Показываем фото выбранного отдела
 renderAdminDepartmentPhotos();
 
@@ -1852,6 +1869,9 @@ document.getElementById("admin-photo-status").textContent = "";
 
     marker.promo =
     document.getElementById('marker-promo').value.trim();
+
+    marker.searchProducts =
+  document.getElementById("marker-search-products").value.trim();
 
 
     await updateDepartment(
@@ -2049,20 +2069,65 @@ expandBtn.setAttribute('aria-label', 'Развернуть карточку');
   btn.setAttribute('aria-label', 'Развернуть карточку');
 }
 
-    function searchDepts(query) {
-      query = query.toLowerCase().trim();
-      if (!query) {
-        renderMarkers();
-        return;
-      }
-      const match = STORES[currentStoreId].markers.find(m => 
-        m.title.toLowerCase().includes(query) || m.desc.toLowerCase().includes(query)
-      );
-      if (match) {
-        renderMarkers(match.id);
-        openSheet(match);
-      }
-    }
+    // =====================================
+// УМНЫЙ ПОИСК ТОВАРОВ И ОТДЕЛОВ
+// =====================================
+
+function normalizeSearch(text) {
+  return String(text || "")
+    .toLowerCase()
+    .replace(/ё/g, "е")
+    .replace(/[^\p{L}\p{N}\s]/gu, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function searchDepts(query) {
+
+  const normalizedQuery = normalizeSearch(query);
+
+  if (!normalizedQuery) {
+    renderMarkers();
+    closeSheet();
+    return;
+  }
+
+  const store = STORES[currentStoreId];
+
+  if (!store || !Array.isArray(store.markers)) return;
+
+  const matches = store.markers.filter(marker => {
+
+    // Все поля, по которым разрешён поиск
+    const searchText = normalizeSearch([
+      marker.title,
+      marker.desc,
+      marker.searchProducts
+    ].join(" "));
+
+    // Каждое слово запроса должно присутствовать
+    const words = normalizedQuery.split(" ");
+
+    return words.every(word => searchText.includes(word));
+
+  });
+
+  if (matches.length === 0) {
+    renderMarkers();
+    closeSheet();
+    return;
+  }
+
+  // Выбираем наиболее подходящий отдел
+  const bestMatch = matches[0];
+
+  // Подсвечиваем найденную метку
+  renderMarkers(bestMatch.id);
+
+  // Приближаем карту и открываем карточку
+  openSheet(bestMatch);
+
+}
 
     // =====================================
 // СОЗДАНИЕ НОВОГО МАГАЗИНА
