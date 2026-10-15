@@ -225,6 +225,8 @@
       display: none; position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%);
       background: #fff; border-radius: 14px; padding: 22px; width: 92%; max-width: 380px;
       z-index: 2000; box-shadow: 0 10px 30px rgba(0,0,0,0.25);
+      max-height: 85dvh;
+      overflow-y: auto;
     }
     .modal-box h3 { margin-bottom: 12px; font-size: 18px; }
     .modal-box label { display: block; font-size: 12px; color: #666; margin-top: 8px; margin-bottom: 3px; }
@@ -377,6 +379,40 @@
     <textarea id="marker-desc" rows="3"></textarea>
     <label>Акция (необязательно)</label>
     <input type="text" id="marker-promo" placeholder="Например: Скидка 20% после 20:00">
+    <!-- Фотографии отдела -->
+<div style="margin-top:16px; border-top:1px solid #ddd; padding-top:14px;">
+
+  <h4 style="margin-bottom:10px;">Фотографии отдела</h4>
+
+  <div id="admin-department-photos" style="
+    display:grid;
+    grid-template-columns:repeat(2,1fr);
+    gap:8px;
+    margin-bottom:12px;
+  "></div>
+
+  <input
+    type="file"
+    id="admin-photo-input"
+    accept="image/jpeg,image/png,image/webp"
+    multiple
+    style="display:none;"
+    onchange="uploadDepartmentPhotos(event)"
+  >
+
+  <button
+    type="button"
+    class="btn-success"
+    style="width:100%;"
+    onclick="document.getElementById('admin-photo-input').click()"
+  >
+    + Добавить фотографии
+  </button>
+
+  <p id="admin-photo-status"
+     style="font-size:12px;color:#666;margin-top:8px;"></p>
+
+</div>
     <div class="modal-footer">
       <button class="btn-danger" onclick="deleteMarker()">Удалить</button>
       <div style="display: flex; gap: 6px;">
@@ -810,7 +846,189 @@ async function loadStoreFromSupabase(){
   return data.map(img=>img.url);
 
 }
+// =====================================
+// ФОТОГРАФИИ ОТДЕЛА В АДМИНКЕ
+// =====================================
 
+// Показываем уже загруженные фотографии
+function renderAdminDepartmentPhotos() {
+
+  const container =
+    document.getElementById("admin-department-photos");
+
+  container.innerHTML = "";
+
+  const marker = STORES[currentStoreId].markers.find(
+    m => m.id === editingMarkerId
+  );
+
+  if (!marker) return;
+
+  if (!marker.images || marker.images.length === 0) {
+
+    container.innerHTML =
+      '<p style="grid-column:1/-1;color:#888;font-size:13px;">Фотографий пока нет</p>';
+
+    return;
+  }
+
+  marker.images.forEach(path => {
+
+    const img = document.createElement("img");
+
+    img.src = getStorageUrl(path);
+    img.loading = "lazy";
+
+    img.style.width = "100%";
+    img.style.aspectRatio = "1/1";
+    img.style.objectFit = "cover";
+    img.style.borderRadius = "10px";
+
+    container.appendChild(img);
+
+  });
+}
+
+
+// Загружаем фотографии в Supabase
+async function uploadDepartmentPhotos(event) {
+
+  const files = Array.from(event.target.files || []);
+
+  const status =
+    document.getElementById("admin-photo-status");
+
+  if (!files.length) return;
+
+  if (!adminAuthorized || !editingMarkerId) {
+    alert("Необходимо войти как администратор.");
+    event.target.value = "";
+    return;
+  }
+
+  const departmentId = editingMarkerId;
+
+  const marker = STORES[currentStoreId].markers.find(
+    m => m.id === departmentId
+  );
+
+  if (!marker) {
+    alert("Отдел не найден.");
+    event.target.value = "";
+    return;
+  }
+
+  const allowedTypes = [
+    "image/jpeg",
+    "image/png",
+    "image/webp"
+  ];
+
+  let uploaded = 0;
+  const errors = [];
+
+  event.target.disabled = true;
+
+  try {
+
+    for (const file of files) {
+
+      try {
+
+        // Проверяем формат
+        if (!allowedTypes.includes(file.type)) {
+          throw new Error("Допустимы только JPG, PNG и WEBP");
+        }
+
+        // Ограничение на размер одного файла: 8 МБ
+        if (file.size > 8 * 1024 * 1024) {
+          throw new Error("Размер файла больше 8 МБ");
+        }
+
+        status.textContent =
+          `Загружается ${uploaded + 1} из ${files.length}...`;
+
+        // Уникальное имя для каждого изображения
+        const extension =
+          file.type === "image/png" ? "png" :
+          file.type === "image/webp" ? "webp" : "jpg";
+
+        const uniqueName =
+          Date.now() + "_" +
+          Math.random().toString(36).slice(2, 10) +
+          "." + extension;
+
+        const storagePath =
+          "donetsk_stadionnaya_3d/departments/" +
+          departmentId + "/" + uniqueName;
+
+        // 1. Загружаем файл в Supabase Storage
+        const { error: storageError } =
+          await supabaseClient.storage
+            .from("store-images")
+            .upload(storagePath, file, {
+              contentType: file.type,
+              upsert: false
+            });
+
+        if (storageError) {
+          throw storageError;
+        }
+
+        // 2. Привязываем изображение к отделу
+        const { error: dbError } =
+          await supabaseClient
+            .from("department_images")
+            .insert({
+              department_id: departmentId,
+              url: storagePath,
+              sort_order: 0
+            });
+
+        if (dbError) {
+          throw dbError;
+        }
+
+        // 3. Обновляем список фото на странице
+        marker.images = marker.images || [];
+        marker.images.push(storagePath);
+
+        uploaded++;
+
+        renderAdminDepartmentPhotos();
+
+      } catch (error) {
+
+        console.error("Ошибка загрузки фото:", error);
+
+        errors.push(
+          file.name + ": " + (error.message || "Ошибка")
+        );
+
+      }
+
+    }
+
+    status.textContent =
+      `Загружено фотографий: ${uploaded} из ${files.length}`;
+
+    if (errors.length) {
+
+      alert(
+        "Не все фотографии удалось загрузить:\n\n" +
+        errors.join("\n")
+      );
+
+    }
+
+  } finally {
+
+    event.target.value = "";
+    event.target.disabled = false;
+
+  }
+
+}
     function saveManifest() {
       localStorage.setItem('stores_network_saved_v3', JSON.stringify(STORES));
     }
@@ -1222,6 +1440,10 @@ function renderMarkers(highlightId = null) {
       document.getElementById('marker-title').value = marker.title;
       document.getElementById('marker-desc').value = marker.desc;
       document.getElementById('marker-promo').value = marker.promo;
+      // Показываем фото выбранного отдела
+renderAdminDepartmentPhotos();
+
+document.getElementById("admin-photo-status").textContent = "";
 
       document.getElementById('marker-modal').style.display = 'block';
       document.getElementById('overlay').style.display = 'block';
