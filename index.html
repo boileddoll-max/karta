@@ -259,6 +259,14 @@
         <input type="checkbox" id="edit-toggle" onchange="toggleEditMode(this.checked)">
         <b>Редактор</b>
       </label>
+      <button
+  id="admin-logout"
+  class="btn-gray"
+  style="display:none;"
+  onclick="adminLogout()"
+>
+  Выйти
+</button>
     </div>
 
     <!-- Поиск для покупателей -->
@@ -284,7 +292,62 @@
   </div>
 
   <div id="map"></div>
+  <!-- Вход администратора -->
+<div id="admin-login-overlay" style="
+  display:none;
+  position:fixed;
+  inset:0;
+  background:rgba(0,0,0,0.55);
+  z-index:3000;
+  align-items:center;
+  justify-content:center;
+  padding:20px;
+">
+  <div style="
+    background:white;
+    border-radius:16px;
+    padding:24px;
+    width:100%;
+    max-width:380px;
+  ">
+    <h3 style="margin-bottom:15px;">Вход администратора</h3>
 
+    <input
+      id="admin-email"
+      type="email"
+      placeholder="Электронная почта"
+      autocomplete="username"
+      style="width:100%;margin-bottom:10px;"
+    >
+
+    <input
+      id="admin-password"
+      type="password"
+      placeholder="Пароль"
+      autocomplete="current-password"
+      style="width:100%;margin-bottom:12px;"
+    >
+
+    <button
+      onclick="adminLogin()"
+      style="width:100%;"
+    >
+      Войти
+    </button>
+
+    <p id="admin-login-error"
+       style="color:#dc2626;font-size:13px;margin-top:10px;">
+    </p>
+
+    <button
+      class="btn-gray"
+      onclick="window.location.href=window.location.pathname"
+      style="width:100%;margin-top:10px;"
+    >
+      Вернуться к карте
+    </button>
+  </div>
+</div>
   <!-- Шторка отдела для посетителя -->
   <div id="bottom-sheet">
     <div class="sheet-handle"></div>
@@ -332,7 +395,76 @@ const supabaseClient = supabase.createClient(
   SUPABASE_URL,
   SUPABASE_KEY
 );
+const ADMIN_UID = "2e81865d-b6c7-4585-a5fa-10a211abf137";
 
+let adminAuthorized = false;
+
+async function checkAdminSession() {
+  const { data, error } = await supabaseClient.auth.getUser();
+
+  adminAuthorized =
+    !error &&
+    data.user?.id === ADMIN_UID;
+
+  return adminAuthorized;
+}
+
+function showAdminLogin() {
+  document.getElementById("admin-login-overlay").style.display = "flex";
+}
+
+function hideAdminLogin() {
+  document.getElementById("admin-login-overlay").style.display = "none";
+}
+
+function showAdminControls() {
+  document.getElementById("admin-toggle-wrapper").style.display = "flex";
+  document.getElementById("admin-logout").style.display = "inline-block";
+}
+
+async function adminLogin() {
+  const email = document.getElementById("admin-email").value.trim();
+  const password = document.getElementById("admin-password").value;
+  const errorEl = document.getElementById("admin-login-error");
+
+  errorEl.textContent = "";
+
+  const { data, error } =
+    await supabaseClient.auth.signInWithPassword({
+      email,
+      password
+    });
+
+  if (error) {
+    errorEl.textContent = "Ошибка входа: " + error.message;
+    return;
+  }
+
+  if (data.user?.id !== ADMIN_UID) {
+    await supabaseClient.auth.signOut();
+    errorEl.textContent = "У этой учётной записи нет прав администратора.";
+    return;
+  }
+
+  adminAuthorized = true;
+  hideAdminLogin();
+  showAdminControls();
+}
+
+async function adminLogout() {
+  isEditMode = false;
+  adminAuthorized = false;
+
+  await supabaseClient.auth.signOut();
+
+  document.getElementById("edit-toggle").checked = false;
+  document.getElementById("admin-toggle-wrapper").style.display = "none";
+  document.getElementById("admin-logout").style.display = "none";
+  document.getElementById("admin-panel").style.display = "none";
+
+  renderMarkers();
+  showAdminLogin();
+}
 
 function getStorageUrl(path){
 
@@ -655,10 +787,19 @@ async function loadStoreFromSupabase(){
 
       const params = new URLSearchParams(window.location.search);
       
-      // Доступ к редактору только по ?admin=1
-      if (params.get('admin') === '1') {
-        document.getElementById('admin-toggle-wrapper').style.display = 'flex';
-      }
+     
+      // Проверяем, открыт ли адрес администратора
+if (params.get("admin") === "1") {
+
+  const authorized = await checkAdminSession();
+
+  if (authorized) {
+    showAdminControls();
+  } else {
+    showAdminLogin();
+  }
+
+}
 
       
 // Выбор филиала
@@ -783,8 +924,9 @@ loadMap();
           return;
         }
 
-        // Добавление новой метки отдела в режиме редактора
-        if (!isEditMode) return;
+     
+        // Создавать метки может только администратор
+if (!isEditMode || !adminAuthorized) return;
         const newMarker = {
 
   title: "Новый отдел",
@@ -978,12 +1120,23 @@ function renderMarkers(highlightId = null) {
     }
 
     function toggleEditMode(enabled) {
-      isEditMode = enabled;
-      isPickingQrPoint = false;
-      document.getElementById('admin-panel').style.display = enabled ? 'flex' : 'none';
-      closeSheet();
-      renderMarkers();
-    }
+
+  if (!adminAuthorized) {
+    isEditMode = false;
+    document.getElementById("edit-toggle").checked = false;
+    showAdminLogin();
+    return;
+  }
+
+  isEditMode = enabled;
+  isPickingQrPoint = false;
+
+  document.getElementById("admin-panel").style.display =
+    enabled ? "flex" : "none";
+
+  closeSheet();
+  renderMarkers();
+}
 
     async function handleImageUpload(e) {
       const file = e.target.files[0];
