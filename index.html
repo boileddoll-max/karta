@@ -1642,12 +1642,97 @@ document.getElementById("admin-photo-status").textContent = "";
 
 }
 
-    function deleteMarker() {
-      STORES[currentStoreId].markers = STORES[currentStoreId].markers.filter(m => m.id !== editingMarkerId);
-      saveManifest();
-      renderMarkers();
-      closeModals();
+  async function deleteMarker() {
+
+  if (!adminAuthorized) {
+    alert("Удалять отделы может только администратор.");
+    return;
+  }
+
+  const departmentId = editingMarkerId;
+
+  if (departmentId == null) {
+    alert("Отдел не выбран.");
+    return;
+  }
+
+  const store = STORES[currentStoreId];
+
+  const marker = store.markers.find(
+    m => m.id === departmentId
+  );
+
+  if (!marker) {
+    alert("Отдел не найден.");
+    return;
+  }
+
+  const confirmed = confirm(
+    `Удалить отдел «${marker.title}»?\n\n` +
+    "Метка, описание, акции и фотографии исчезнут с карты у всех покупателей.\n\n" +
+    "Это действие нельзя отменить."
+  );
+
+  if (!confirmed) return;
+
+  try {
+
+    // 1. Сначала удаляем привязки фотографий
+    const { error: imagesError } =
+      await supabaseClient
+        .from("department_images")
+        .delete()
+        .eq("department_id", departmentId);
+
+    if (imagesError) {
+      throw new Error(
+        "Не удалось удалить связи с фотографиями: " +
+        imagesError.message
+      );
     }
+
+    // 2. Удаляем сам отдел из Supabase
+    const { data: deleted, error: deleteError } =
+      await supabaseClient
+        .from("departments")
+        .delete()
+        .eq("id", departmentId)
+        .eq("store_id", currentStoreId)
+        .select("id");
+
+    if (deleteError) {
+      throw deleteError;
+    }
+
+    if (!deleted || deleted.length === 0) {
+      throw new Error(
+        "Supabase не подтвердил удаление отдела. Проверь права доступа."
+      );
+    }
+
+    // 3. Убираем метку с карты
+    store.markers = store.markers.filter(
+      m => m.id !== departmentId
+    );
+
+    closeModals();
+    closeSheet();
+    renderMarkers();
+
+    alert(`Отдел «${marker.title}» удалён.`);
+
+  } catch (error) {
+
+    console.error("Ошибка удаления отдела:", error);
+
+    alert(
+      "Не удалось удалить отдел:\n\n" +
+      (error.message || "Неизвестная ошибка")
+    );
+
+  }
+
+}
 
     function openSheet(data) {
       document.getElementById('sheet-title').innerText = data.title;
