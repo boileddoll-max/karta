@@ -1474,7 +1474,9 @@ function renderMarkers(highlightId = null) {
 
   markers.forEach((data) => {
 
-    const isHighlight = data.id === highlightId;
+    const isHighlight =
+  highlightId != null &&
+  String(data.id) === String(highlightId);
 
 
     const iconHtml = `
@@ -2031,7 +2033,11 @@ expandBtn.innerHTML = '&#9650;';
 expandBtn.setAttribute('aria-expanded', 'false');
 expandBtn.setAttribute('aria-label', 'Развернуть карточку');
       document.getElementById('bottom-sheet').classList.add('open');
-      map.flyTo([data.y, data.x], map.getZoom() > -0.5 ? map.getZoom() : -0.5, { duration: 0.6 });
+      map.flyTo(
+  [Number(data.y), Number(data.x)],
+  Math.max(map.getZoom(), -0.3),
+  { animate: true, duration: 0.8 }
+);
     }
     function toggleSheetExpand() {
 
@@ -2082,11 +2088,20 @@ function normalizeSearch(text) {
     .trim();
 }
 
+function normalizeSearch(text) {
+  return String(text || "")
+    .toLowerCase()
+    .replace(/ё/g, "е")
+    .replace(/[^\p{L}\p{N}\s]/gu, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
 function searchDepts(query) {
 
-  const normalizedQuery = normalizeSearch(query);
+  const search = normalizeSearch(query);
 
-  if (!normalizedQuery) {
+  if (!search) {
     renderMarkers();
     closeSheet();
     return;
@@ -2094,38 +2109,42 @@ function searchDepts(query) {
 
   const store = STORES[currentStoreId];
 
-  if (!store || !Array.isArray(store.markers)) return;
+  if (!store || !map || !Array.isArray(store.markers)) {
+    return;
+  }
 
-  const matches = store.markers.filter(marker => {
+  const words = search.split(" ");
 
-    // Все поля, по которым разрешён поиск
-    const searchText = normalizeSearch([
+  const found = store.markers.find(marker => {
+
+    const text = normalizeSearch([
       marker.title,
       marker.desc,
       marker.searchProducts
     ].join(" "));
 
-    // Каждое слово запроса должно присутствовать
-    const words = normalizedQuery.split(" ");
-
-    return words.every(word => searchText.includes(word));
+    return words.every(word => text.includes(word));
 
   });
 
-  if (matches.length === 0) {
+  if (!found) {
     renderMarkers();
     closeSheet();
     return;
   }
 
-  // Выбираем наиболее подходящий отдел
-  const bestMatch = matches[0];
+  // Подсвечиваем найденный отдел
+  renderMarkers(found.id);
 
-  // Подсвечиваем найденную метку
-  renderMarkers(bestMatch.id);
+  // Передвигаем карту к найденной метке
+  map.flyTo(
+    [Number(found.y), Number(found.x)],
+    Math.max(map.getZoom(), -0.3),
+    { animate: true, duration: 0.8 }
+  );
 
-  // Приближаем карту и открываем карточку
-  openSheet(bestMatch);
+  // Открываем информацию об отделе
+  openSheet(found);
 
 }
 
