@@ -423,32 +423,59 @@ function showAdminControls() {
 }
 
 async function adminLogin() {
+
   const email = document.getElementById("admin-email").value.trim();
   const password = document.getElementById("admin-password").value;
   const errorEl = document.getElementById("admin-login-error");
 
   errorEl.textContent = "";
 
-  const { data, error } =
-    await supabaseClient.auth.signInWithPassword({
-      email,
-      password
-    });
-
-  if (error) {
-    errorEl.textContent = "Ошибка входа: " + error.message;
+  if (!email || !password) {
+    errorEl.textContent = "Введите email и пароль.";
     return;
   }
 
-  if (data.user?.id !== ADMIN_UID) {
-    await supabaseClient.auth.signOut();
-    errorEl.textContent = "У этой учётной записи нет прав администратора.";
-    return;
+  try {
+
+    const { data, error } =
+      await supabaseClient.auth.signInWithPassword({
+        email: email,
+        password: password
+      });
+
+    if (error) {
+      errorEl.textContent = "Ошибка входа: " + error.message;
+      return;
+    }
+
+    if (data.user?.id !== ADMIN_UID) {
+
+      await supabaseClient.auth.signOut();
+
+      errorEl.textContent =
+        "Эта учётная запись не является администратором.";
+
+      return;
+    }
+
+    adminAuthorized = true;
+
+    document.getElementById("admin-password").value = "";
+
+    hideAdminLogin();
+    showAdminControls();
+
+    console.log("Успешный вход администратора");
+
+  } catch (error) {
+
+    console.error("Ошибка входа:", error);
+
+    errorEl.textContent =
+      "Ошибка соединения с Supabase. Попробуйте ещё раз.";
+
   }
 
-  adminAuthorized = true;
-  hideAdminLogin();
-  showAdminControls();
 }
 
 async function adminLogout() {
@@ -736,16 +763,22 @@ async function loadStoreFromSupabase(){
     .single();
 
 
-  if(error){
+  if (error) {
 
-    console.error(
-      "Ошибка создания отдела:",
-      error
-    );
+  console.error(
+    "Ошибка создания отдела:",
+    JSON.stringify(error, null, 2)
+  );
 
-    return null;
+  alert(
+    "Не удалось создать отдел.\n\n" +
+    "Код: " + (error.code || "неизвестен") + "\n" +
+    "Причина: " + error.message
+  );
 
-  }
+  return null;
+
+}
 
 
   console.log(
@@ -789,14 +822,37 @@ async function loadStoreFromSupabase(){
       
      
       // Проверяем, открыт ли адрес администратора
+// Запуск админки
 if (params.get("admin") === "1") {
 
-  const authorized = await checkAdminSession();
+  // Сразу показываем форму входа
+  showAdminLogin();
 
-  if (authorized) {
-    showAdminControls();
-  } else {
-    showAdminLogin();
+  try {
+
+    // Проверяем, не вошёл ли администратор ранее
+    const authorized = await checkAdminSession();
+
+    if (authorized) {
+
+      hideAdminLogin();
+      showAdminControls();
+
+      console.log("Администратор авторизован");
+
+    } else {
+
+      console.log("Ожидается вход администратора");
+
+    }
+
+  } catch (error) {
+
+    console.error("Ошибка проверки авторизации:", error);
+
+    document.getElementById("admin-login-error").textContent =
+      "Не удалось проверить авторизацию. Попробуйте войти.";
+
   }
 
 }
